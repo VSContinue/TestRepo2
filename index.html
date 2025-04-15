@@ -1,22 +1,269 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
-  <title>Калькулятор</title>
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Калькулятор подсетей</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            color: #333;
+        }
+        .container {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            max-width: 600px;
+            width: 100%;
+        }
+        h1 {
+            text-align: center;
+            color: #1a73e8;
+            margin-bottom: 1.5rem;
+        }
+        .input-group {
+            margin-bottom: 1rem;
+        }
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: bold;
+        }
+        input {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            font-size: 1rem;
+        }
+        button {
+            width: 100%;
+            padding: 0.75rem;
+            background-color: #1a73e8;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #1557b0;
+        }
+        .result {
+            margin-top: 1.5rem;
+            padding: 1rem;
+            background-color: #e8f0fe;
+            border-radius: 5px;
+        }
+        .result p {
+            margin: 0.5rem 0;
+        }
+        .tab {
+            display: none;
+        }
+        .tab.active {
+            display: block;
+        }
+        .tabs {
+            display: flex;
+            margin-bottom: 1rem;
+        }
+        .tab-button {
+            flex: 1;
+            padding: 0.75rem;
+            background-color: #f1f3f4;
+            border: none;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+        .tab-button.active {
+            background-color: #1a73e8;
+            color: white;
+        }
+        @media (max-width: 500px) {
+            .container {
+                padding: 1rem;
+            }
+        }
+    </style>
 </head>
 <body>
-  <input id="num1" type="number" placeholder="Число 1">
-  <input id="num2" type="number" placeholder="Число 2">
-  <button onclick="calculate()">Посчитать</button>
-  <p id="result"></p>
-  <script>
-    function calculate() {
-      let num1 = parseFloat(document.getElementById('num1').value);
-      let num2 = parseFloat(document.getElementById('num2').value);
-      let result = num1 + num2;
-      document.getElementById('result').innerText = `Результат: ${result}`;
-      window.Telegram.WebApp.sendData(JSON.stringify({result}));
-    }
-  </script>
+    <div class="container">
+        <h1>Калькулятор подсетей</h1>
+        <div class="tabs">
+            <button class="tab-button active" onclick="openTab('subnet')">Подсети по маске</button>
+            <button class="tab-button" onclick="openTab('mask')">Маска по хостам</button>
+        </div>
+        <!-- Вкладка: Подсети по маске -->
+        <div id="subnet" class="tab active">
+            <div class="input-group">
+                <label for="ip">IP-адрес (например, 192.168.1.0)</label>
+                <input type="text" id="ip" placeholder="192.168.1.0">
+            </div>
+            <div class="input-group">
+                <label for="mask">Маска подсети (например, /24 или 255.255.255.0)</label>
+                <input type="text" id="mask" placeholder="/24">
+            </div>
+            <button onclick="calculateSubnet()">Рассчитать подсети</button>
+            <div id="subnet-result" class="result"></div>
+        </div>
+        <!-- Вкладка: Маска по хостам -->
+        <div id="mask" class="tab">
+            <div class="input-group">
+                <label for="hosts">Количество хостов в подсети</label>
+                <input type="number" id="hosts" placeholder="Например, 50">
+            </div>
+            <div class="input-group">
+                <label for="base-ip">Базовый IP-адрес (например, 192.168.1.0)</label>
+                <input type="text" id="base-ip" placeholder="192.168.1.0">
+            </div>
+            <button onclick="calculateMask()">Рассчитать маску</button>
+            <div id="mask-result" class="result"></div>
+        </div>
+    </div>
+    <script>
+        function openTab(tabId) {
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+            document.querySelector(`[onclick="openTab('${tabId}')"]`).classList.add('active');
+        }
+
+        function calculateSubnet() {
+            const ip = document.getElementById('ip').value;
+            const mask = document.getElementById('mask').value;
+            const resultDiv = document.getElementById('subnet-result');
+
+            // Валидация IP
+            const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
+            if (!ipRegex.test(ip)) {
+                resultDiv.innerHTML = '<p style="color: red;">Неверный IP-адрес!</p>';
+                return;
+            }
+
+            // Парсим маску
+            let cidr = mask.startsWith('/') ? parseInt(mask.slice(1)) : maskToCidr(mask);
+            if (isNaN(cidr) || cidr < 0 || cidr > 32) {
+                resultDiv.innerHTML = '<p style="color: red;">Неверная маска!</p>';
+                return;
+            }
+
+            // Расчёты
+            const ipArray = ip.split('.').map(Number);
+            const network = ipArray.join('.');
+            const totalHosts = Math.pow(2, 32 - cidr);
+            const usableHosts = totalHosts - 2;
+            const subnetMask = cidrToMask(cidr);
+            const broadcast = calculateBroadcast(ipArray, cidr);
+            const firstHost = calculateFirstHost(ipArray, cidr);
+            const lastHost = calculateLastHost(ipArray, cidr);
+
+            // Вывод результата
+            resultDiv.innerHTML = `
+                <p><strong>Сеть:</strong> ${network}/${cidr}</p>
+                <p><strong>Маска подсети:</strong> ${subnetMask}</p>
+                <p><strong>Первый хост:</strong> ${firstHost}</p>
+                <p><strong>Последний хост:</strong> ${lastHost}</p>
+                <p><strong>Широковещательный адрес:</strong> ${broadcast}</p>
+                <p><strong>Всего хостов:</strong> ${totalHosts}</p>
+                <p><strong>Доступных хостов:</strong> ${usableHosts}</p>
+            `;
+        }
+
+        function calculateMask() {
+            const hosts = parseInt(document.getElementById('hosts').value);
+            const baseIp = document.getElementById('base-ip').value;
+            const resultDiv = document.getElementById('mask-result');
+
+            // Валидация
+            if (isNaN(hosts) || hosts < 1) {
+                resultDiv.innerHTML = '<p style="color: red;">Введите корректное число хостов!</p>';
+                return;
+            }
+            const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
+            if (!ipRegex.test(baseIp)) {
+                resultDiv.innerHTML = '<p style="color: red;">Неверный IP-адрес!</p>';
+                return;
+            }
+
+            // Расчёт необходимой маски
+            const neededHosts = hosts + 2; // Учитываем сеть и широковещательный адрес
+            let cidr = 32 - Math.ceil(Math.log2(neededHosts));
+            if (cidr < 0) cidr = 0;
+
+            // Расчёты
+            const ipArray = baseIp.split('.').map(Number);
+            const network = baseIp;
+            const totalHosts = Math.pow(2, 32 - cidr);
+            const usableHosts = totalHosts - 2;
+            const subnetMask = cidrToMask(cidr);
+            const broadcast = calculateBroadcast(ipArray, cidr);
+            const firstHost = calculateFirstHost(ipArray, cidr);
+            const lastHost = calculateLastHost(ipArray, cidr);
+
+            // Вывод результата
+            resultDiv.innerHTML = `
+                <p><strong>Рекомендуемая маска:</strong> /${cidr} (${subnetMask})</p>
+                <p><strong>Сеть:</strong> ${network}/${cidr}</p>
+                <p><strong>Первый хост:</strong> ${firstHost}</p>
+                <p><strong>Последний хост:</strong> ${lastHost}</p>
+                <p><strong>Широковещательный адрес:</strong> ${broadcast}</p>
+                <p><strong>Всего хостов:</strong> ${totalHosts}</p>
+                <p><strong>Доступных хостов:</strong> ${usableHosts}</p>
+            `;
+        }
+
+        function maskToCidr(mask) {
+            if (!mask.includes('.')) return parseInt(mask);
+            const octets = mask.split('.').map(Number);
+            let binary = octets.map(o => o.toString(2).padStart(8, '0')).join('');
+            return binary.split('').filter(bit => bit === '1').length;
+        }
+
+        function cidrToMask(cidr) {
+            let mask = [];
+            for (let i = 0; i < 4; i++) {
+                let n = Math.min(cidr, 8);
+                mask.push(256 - Math.pow(2, 8 - n));
+                cidr -= n;
+            }
+            return mask.join('.');
+        }
+
+        function calculateBroadcast(ip, cidr) {
+            let ipNum = ip.reduce((acc, octet, i) => acc + octet * Math.pow(256, 3 - i), 0);
+            let totalHosts = Math.pow(2, 32 - cidr);
+            let broadcastNum = ipNum + totalHosts - 1;
+            return numToIp(broadcastNum);
+        }
+
+        function calculateFirstHost(ip, cidr) {
+            let ipNum = ip.reduce((acc, octet, i) => acc + octet * Math.pow(256, 3 - i), 0);
+            return numToIp(ipNum + 1);
+        }
+
+        function calculateLastHost(ip, cidr) {
+            let ipNum = ip.reduce((acc, octet, i) => acc + octet * Math.pow(256, 3 - i), 0);
+            let totalHosts = Math.pow(2, 32 - cidr);
+            return numToIp(ipNum + totalHosts - 2);
+        }
+
+        function numToIp(num) {
+            return [
+                (num >> 24) & 255,
+                (num >> 16) & 255,
+                (num >> 8) & 255,
+                num & 255
+            ].join('.');
+        }
+    </script>
 </body>
 </html>
